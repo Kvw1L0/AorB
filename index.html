@@ -1,243 +1,288 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Votación Interactiva por Color</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #111;
-            color: white;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-        }
+<meta charset="UTF-8">
+<title>Votación Visual TV Show</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-        /* Contenedor del video y superposiciones */
-        #stage {
-            position: relative;
-            width: 80%;
-            max-width: 800px;
-            margin-top: 20px;
-            border: 5px solid #333;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        }
+<style>
+:root {
+  --green: #00ff88;
+  --red: #ff0055;
+}
 
-        video {
-            width: 100%;
-            height: auto;
-            display: block;
-            transform: scaleX(-1); /* Efecto espejo para que sea natural */
-        }
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #222, #000);
+  color: white;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
 
-        /* Canvas oculto para procesamiento */
-        #canvasHidden {
-            display: none;
-        }
+h1 {
+  margin: 20px 0 10px;
+  letter-spacing: 2px;
+}
 
-        /* Interfaz de barras de votación */
-        #ui-layer {
-            width: 90%;
-            margin-top: 30px;
-        }
+#stage {
+  position: relative;
+  width: 80%;
+  max-width: 900px;
+  border: 6px solid #333;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0,0,0,.7);
+}
 
-        .option-container {
-            margin-bottom: 20px;
-        }
+video {
+  width: 100%;
+  transform: scaleX(-1);
+}
 
-        .labels {
-            display: flex;
-            justify-content: space-between;
-            font-size: 1.5rem;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
+#overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 
-        .bar-bg {
-            background-color: #333;
-            height: 40px;
-            border-radius: 20px;
-            overflow: hidden;
-            position: relative;
-        }
+.flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: flash .4s ease-out;
+}
 
-        .bar-fill {
-            height: 100%;
-            width: 0%;
-            transition: width 0.3s ease-out; /* Suaviza el movimiento */
-        }
+.flash.green { background: rgba(0,255,136,.35); }
+.flash.red { background: rgba(255,0,85,.35); }
 
-        /* Colores específicos */
-        .color-a { color: #00ff00; }
-        .fill-a { background-color: #00ff00; box-shadow: 0 0 15px #00ff00; }
-        
-        .color-b { color: #ff0055; }
-        .fill-b { background-color: #ff0055; box-shadow: 0 0 15px #ff0055; }
+@keyframes flash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
 
-        #status {
-            margin-top: 10px;
-            color: #888;
-            font-size: 0.9rem;
-        }
-    </style>
+#ui {
+  width: 90%;
+  margin-top: 20px;
+}
+
+.option {
+  margin-bottom: 20px;
+}
+
+.label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.8rem;
+  font-weight: bold;
+}
+
+.counter {
+  font-size: 2.2rem;
+}
+
+.bar-bg {
+  height: 22px;
+  background: #222;
+  border-radius: 20px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.bar-fill {
+  height: 100%;
+  width: 0%;
+}
+
+.green { color: var(--green); }
+.red { color: var(--red); }
+
+.bar-green { background: var(--green); box-shadow: 0 0 15px var(--green); }
+.bar-red { background: var(--red); box-shadow: 0 0 15px var(--red); }
+
+#status {
+  margin: 10px;
+  font-size: 1rem;
+  opacity: .7;
+}
+
+#timer {
+  font-size: 3rem;
+  margin: 10px;
+  font-weight: bold;
+  letter-spacing: 4px;
+}
+</style>
 </head>
+
 <body>
 
-    <h1>¿CAMINO A o CAMINO B?</h1>
+<h1>¿CAMINO A o CAMINO B?</h1>
+<div id="timer">5</div>
 
-    <div id="stage">
-        <video id="webcam" autoplay playsinline></video>
-        <canvas id="canvasHidden"></canvas>
+<div id="stage">
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" hidden></canvas>
+  <div id="overlay"></div>
+</div>
+
+<div id="ui">
+  <div class="option">
+    <div class="label green">
+      CAMINO A
+      <span id="greenVotes" class="counter">0</span>
     </div>
-
-    <div id="ui-layer">
-        <div class="option-container">
-            <div class="labels">
-                <span class="color-a">CAMINO A (VERDE)</span>
-                <span id="pct-a">0%</span>
-            </div>
-            <div class="bar-bg">
-                <div id="bar-a" class="bar-fill fill-a"></div>
-            </div>
-        </div>
-
-        <div class="option-container">
-            <div class="labels">
-                <span class="color-b">CAMINO B (ROJO)</span>
-                <span id="pct-b">0%</span>
-            </div>
-            <div class="bar-bg">
-                <div id="bar-b" class="bar-fill fill-b"></div>
-            </div>
-        </div>
+    <div class="bar-bg">
+      <div id="barGreen" class="bar-fill bar-green"></div>
     </div>
+  </div>
 
-    <div id="status">Esperando cámara...</div>
+  <div class="option">
+    <div class="label red">
+      CAMINO B
+      <span id="redVotes" class="counter">0</span>
+    </div>
+    <div class="bar-bg">
+      <div id="barRed" class="bar-fill bar-red"></div>
+    </div>
+  </div>
+</div>
+
+<div id="status">Inicializando sistema…</div>
+
+<audio id="voteSound">
+  <source src="data:audio/wav;base64,UklGRmQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YUAAAAA=">
+</audio>
 
 <script>
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('canvasHidden');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const statusText = document.getElementById('status');
-    
-    // Elementos de la UI
-    const barA = document.getElementById('bar-a');
-    const barB = document.getElementById('bar-b');
-    const pctA = document.getElementById('pct-a');
-    const pctB = document.getElementById('pct-b');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    // Configuración
-    const SAMPLING_RATE = 10; // Analizar 1 de cada 10 píxeles (mejora rendimiento)
-    
-    // Iniciar Webcam
-    async function startWebcam() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-            video.srcObject = stream;
-            video.onloadedmetadata = () => {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                processFrame();
-                statusText.innerText = "Sistema de votación activo";
-            };
-        } catch (err) {
-            statusText.innerText = "Error accediendo a la cámara: " + err;
-        }
+const greenUI = document.getElementById('greenVotes');
+const redUI = document.getElementById('redVotes');
+const barGreen = document.getElementById('barGreen');
+const barRed = document.getElementById('barRed');
+const statusText = document.getElementById('status');
+const overlay = document.getElementById('overlay');
+const sound = document.getElementById('voteSound');
+const timerUI = document.getElementById('timer');
+
+let greenVotes = 0;
+let redVotes = 0;
+let greenActive = false;
+let redActive = false;
+
+let votingActive = true;
+let timeLeft = 5;
+
+const GREEN_THRESHOLD = 150;
+const RED_THRESHOLD = 150;
+const SAMPLING = 10;
+
+function rgbToHsl(r,g,b){
+  r/=255; g/=255; b/=255;
+  let max=Math.max(r,g,b), min=Math.min(r,g,b);
+  let h,s,l=(max+min)/2;
+  if(max===min){h=s=0;}
+  else{
+    let d=max-min;
+    s=l>0.5?d/(2-max-min):d/(max+min);
+    switch(max){
+      case r:h=(g-b)/d+(g<b?6:0);break;
+      case g:h=(b-r)/d+2;break;
+      case b:h=(r-g)/d+4;break;
+    }
+    h*=60;
+  }
+  return [h,s*100,l*100];
+}
+
+function flash(color){
+  const f = document.createElement('div');
+  f.className = `flash ${color}`;
+  overlay.appendChild(f);
+  setTimeout(()=>f.remove(),400);
+}
+
+function vote(color){
+  if(!votingActive) return;
+  sound.currentTime = 0;
+  sound.play();
+
+  if(color==='green'){
+    greenVotes++;
+    greenUI.textContent = greenVotes;
+    flash('green');
+  } else {
+    redVotes++;
+    redUI.textContent = redVotes;
+    flash('red');
+  }
+
+  const total = greenVotes + redVotes;
+  barGreen.style.width = total ? (greenVotes/total*100)+'%' : '0%';
+  barRed.style.width = total ? (redVotes/total*100)+'%' : '0%';
+}
+
+function process(){
+  if(video.readyState === video.HAVE_ENOUGH_DATA){
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let g=0,r=0;
+
+    for(let i=0;i<data.length;i+=4*SAMPLING){
+      const [h,s,l] = rgbToHsl(data[i],data[i+1],data[i+2]);
+      if(s>30 && l>20 && l<85){
+        if(h>80 && h<160) g++;
+        else if(h>330 || h<30) r++;
+      }
     }
 
-    // Convertir RGB a HSL (Hue, Saturation, Lightness)
-    // HSL es mucho mejor para detectar colores que RGB cuando cambia la luz.
-    function rgbToHsl(r, g, b) {
-        r /= 255, g /= 255, b /= 255;
-        let max = Math.max(r, g, b), min = Math.min(r, g, b);
-        let h, s, l = (max + min) / 2;
-
-        if (max == min) {
-            h = s = 0; // achimathic
-        } else {
-            let d = max - min;
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            switch (max) {
-                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                case g: h = (b - r) / d + 2; break;
-                case b: h = (r - g) / d + 4; break;
-            }
-            h /= 6;
-        }
-        return [h * 360, s * 100, l * 100];
+    if(g>GREEN_THRESHOLD && !greenActive){
+      vote('green');
+      greenActive=true;
     }
+    if(g<=GREEN_THRESHOLD) greenActive=false;
 
-    function processFrame() {
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            // Dibujar frame actual en canvas oculto
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Obtener data de píxeles
-            const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = frame.data;
-            const length = data.length;
-
-            let countGreen = 0;
-            let countRed = 0;
-
-            // Recorrer píxeles (saltando de 4 en 4 bytes: r,g,b,alpha)
-            // Usamos SAMPLING_RATE para no procesar todos los pixeles y ganar velocidad
-            for (let i = 0; i < length; i += 4 * SAMPLING_RATE) {
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-
-                // Convertir a HSL
-                const [h, s, l] = rgbToHsl(r, g, b);
-
-                // FILTROS DE COLOR (Aquí es donde ocurre la magia)
-                // Ignorar colores oscuros o muy blancos (poco saturados)
-                if (s > 30 && l > 20 && l < 85) {
-                    
-                    // Rango VERDE (Hue aprox 80 a 160)
-                    if (h > 80 && h < 160) {
-                        countGreen++;
-                    }
-                    // Rango ROJO/ROSA (Hue > 330 o < 30)
-                    else if (h > 330 || h < 30) {
-                        countRed++;
-                    }
-                }
-            }
-
-            updateUI(countGreen, countRed);
-        }
-        requestAnimationFrame(processFrame);
+    if(r>RED_THRESHOLD && !redActive){
+      vote('red');
+      redActive=true;
     }
+    if(r<=RED_THRESHOLD) redActive=false;
+  }
+  requestAnimationFrame(process);
+}
 
-    function updateUI(green, red) {
-        const total = green + red;
-        
-        let pGreen = 0;
-        let pRed = 0;
+async function start(){
+  const stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+  video.srcObject = stream;
+  video.onloadedmetadata=()=>{
+    canvas.width=video.videoWidth;
+    canvas.height=video.videoHeight;
+    process();
+  };
+}
 
-        if (total > 0) {
-            // Calcular porcentajes
-            pGreen = Math.round((green / total) * 100);
-            pRed = Math.round((red / total) * 100);
-        }
-
-        // Actualizar el DOM
-        barA.style.width = pGreen + "%";
-        pctA.innerText = pGreen + "%";
-        
-        barB.style.width = pRed + "%";
-        pctB.innerText = pRed + "%";
+function countdown(){
+  const interval=setInterval(()=>{
+    timeLeft--;
+    timerUI.textContent=timeLeft;
+    if(timeLeft<=0){
+      votingActive=false;
+      timerUI.textContent="STOP";
+      statusText.textContent="Votación cerrada";
+      clearInterval(interval);
     }
+  },1000);
+}
 
-    // Arrancar
-    startWebcam();
-
+statusText.textContent="Sistema activo – votación abierta";
+start();
+countdown();
 </script>
+
 </body>
 </html>
