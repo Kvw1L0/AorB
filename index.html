@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Votación Interactiva por Color</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #111;
+            color: white;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Contenedor del video y superposiciones */
+        #stage {
+            position: relative;
+            width: 80%;
+            max-width: 800px;
+            margin-top: 20px;
+            border: 5px solid #333;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+            transform: scaleX(-1); /* Efecto espejo para que sea natural */
+        }
+
+        /* Canvas oculto para procesamiento */
+        #canvasHidden {
+            display: none;
+        }
+
+        /* Interfaz de barras de votación */
+        #ui-layer {
+            width: 90%;
+            margin-top: 30px;
+        }
+
+        .option-container {
+            margin-bottom: 20px;
+        }
+
+        .labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .bar-bg {
+            background-color: #333;
+            height: 40px;
+            border-radius: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .bar-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease-out; /* Suaviza el movimiento */
+        }
+
+        /* Colores específicos */
+        .color-a { color: #00ff00; }
+        .fill-a { background-color: #00ff00; box-shadow: 0 0 15px #00ff00; }
+        
+        .color-b { color: #ff0055; }
+        .fill-b { background-color: #ff0055; box-shadow: 0 0 15px #ff0055; }
+
+        #status {
+            margin-top: 10px;
+            color: #888;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>¿CAMINO A o CAMINO B?</h1>
+
+    <div id="stage">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="canvasHidden"></canvas>
+    </div>
+
+    <div id="ui-layer">
+        <div class="option-container">
+            <div class="labels">
+                <span class="color-a">CAMINO A (VERDE)</span>
+                <span id="pct-a">0%</span>
+            </div>
+            <div class="bar-bg">
+                <div id="bar-a" class="bar-fill fill-a"></div>
+            </div>
+        </div>
+
+        <div class="option-container">
+            <div class="labels">
+                <span class="color-b">CAMINO B (ROJO)</span>
+                <span id="pct-b">0%</span>
+            </div>
+            <div class="bar-bg">
+                <div id="bar-b" class="bar-fill fill-b"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="status">Esperando cámara...</div>
+
+<script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvasHidden');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const statusText = document.getElementById('status');
+    
+    // Elementos de la UI
+    const barA = document.getElementById('bar-a');
+    const barB = document.getElementById('bar-b');
+    const pctA = document.getElementById('pct-a');
+    const pctB = document.getElementById('pct-b');
+
+    // Configuración
+    const SAMPLING_RATE = 10; // Analizar 1 de cada 10 píxeles (mejora rendimiento)
+    
+    // Iniciar Webcam
+    async function startWebcam() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                processFrame();
+                statusText.innerText = "Sistema de votación activo";
+            };
+        } catch (err) {
+            statusText.innerText = "Error accediendo a la cámara: " + err;
+        }
+    }
+
+    // Convertir RGB a HSL (Hue, Saturation, Lightness)
+    // HSL es mucho mejor para detectar colores que RGB cuando cambia la luz.
+    function rgbToHsl(r, g, b) {
+        r /= 255, g /= 255, b /= 255;
+        let max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h, s, l = (max + min) / 2;
+
+        if (max == min) {
+            h = s = 0; // achimathic
+        } else {
+            let d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return [h * 360, s * 100, l * 100];
+    }
+
+    function processFrame() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            // Dibujar frame actual en canvas oculto
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Obtener data de píxeles
+            const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = frame.data;
+            const length = data.length;
+
+            let countGreen = 0;
+            let countRed = 0;
+
+            // Recorrer píxeles (saltando de 4 en 4 bytes: r,g,b,alpha)
+            // Usamos SAMPLING_RATE para no procesar todos los pixeles y ganar velocidad
+            for (let i = 0; i < length; i += 4 * SAMPLING_RATE) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                // Convertir a HSL
+                const [h, s, l] = rgbToHsl(r, g, b);
+
+                // FILTROS DE COLOR (Aquí es donde ocurre la magia)
+                // Ignorar colores oscuros o muy blancos (poco saturados)
+                if (s > 30 && l > 20 && l < 85) {
+                    
+                    // Rango VERDE (Hue aprox 80 a 160)
+                    if (h > 80 && h < 160) {
+                        countGreen++;
+                    }
+                    // Rango ROJO/ROSA (Hue > 330 o < 30)
+                    else if (h > 330 || h < 30) {
+                        countRed++;
+                    }
+                }
+            }
+
+            updateUI(countGreen, countRed);
+        }
+        requestAnimationFrame(processFrame);
+    }
+
+    function updateUI(green, red) {
+        const total = green + red;
+        
+        let pGreen = 0;
+        let pRed = 0;
+
+        if (total > 0) {
+            // Calcular porcentajes
+            pGreen = Math.round((green / total) * 100);
+            pRed = Math.round((red / total) * 100);
+        }
+
+        // Actualizar el DOM
+        barA.style.width = pGreen + "%";
+        pctA.innerText = pGreen + "%";
+        
+        barB.style.width = pRed + "%";
+        pctB.innerText = pRed + "%";
+    }
+
+    // Arrancar
+    startWebcam();
+
+</script>
+</body>
+</html>
